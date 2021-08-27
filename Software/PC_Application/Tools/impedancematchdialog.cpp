@@ -167,7 +167,7 @@ void ImpedanceMatchDialog::calculateMatch()
         C2 = ESeries::ToESeries(C2, Cseries);
 
         if(twoCs) {
-            for(auto b : ui->lGroup->buttons()) {
+            for(auto &b : ui->lGroup->buttons()) {
                 b->setEnabled(false);
             }
             for(auto &b : ui->cGroup->buttons()) {
