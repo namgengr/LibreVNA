@@ -64,6 +64,7 @@ QString Unit::ToString(double value, QString unit, QString prefixes, int precisi
         }
         ss << value;
         sValue.append(QString::fromStdString(ss.str()));
+        sValue.append(QString::fromStdString(" "));
         sValue.append(prefixes[prefixIndex]);
     }
     sValue.append(unit);

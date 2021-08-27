@@ -31,11 +31,11 @@ ImpedanceMatchDialog::ImpedanceMatchDialog(MarkerModel &model, Marker *marker, Q
     connect(ui->zFreq, &SIUnitEdit::valueChanged, this, &ImpedanceMatchDialog::calculateMatch);
     connect(ui->zImag, &SIUnitEdit::valueChanged, this, &ImpedanceMatchDialog::calculateMatch);
     connect(ui->zReal, &SIUnitEdit::valueChanged, this, &ImpedanceMatchDialog::calculateMatch);
-    connect(ui->zGroup, qOverload<int>(&QButtonGroup::buttonClicked), this, &ImpedanceMatchDialog::calculateMatch);
+    connect(ui->zGroup, qOverload<int>(&QButtonGroup::idClicked), this, &ImpedanceMatchDialog::calculateMatch);
     connect(ui->cMatchType, qOverload<int>(&QComboBox::currentIndexChanged), this, &ImpedanceMatchDialog::calculateMatch);
-    connect(ui->lGroup, qOverload<int>(&QButtonGroup::buttonClicked), this, &ImpedanceMatchDialog::calculateMatch);
-    connect(ui->cGroup, qOverload<int>(&QButtonGroup::buttonClicked), this, &ImpedanceMatchDialog::calculateMatch);
-    connect(ui->zGroup, qOverload<int>(&QButtonGroup::buttonClicked), this, &ImpedanceMatchDialog::calculateMatch);
+    connect(ui->lGroup, qOverload<int>(&QButtonGroup::idClicked), this, &ImpedanceMatchDialog::calculateMatch);
+    connect(ui->cGroup, qOverload<int>(&QButtonGroup::idClicked), this, &ImpedanceMatchDialog::calculateMatch);
+    connect(ui->zGroup, qOverload<int>(&QButtonGroup::idClicked), this, &ImpedanceMatchDialog::calculateMatch);
 
     // populate marker options
     auto markers = model.getMarkers();
@@ -170,7 +170,7 @@ void ImpedanceMatchDialog::calculateMatch()
             for(auto b : ui->lGroup->buttons()) {
                 b->setEnabled(false);
             }
-            for(auto b : ui->cGroup->buttons()) {
+            for(auto &b : ui->cGroup->buttons()) {
                 b->setEnabled(true);
             }
             ui->lL->setText("C1:");
@@ -180,10 +180,10 @@ void ImpedanceMatchDialog::calculateMatch()
             ui->lValue->setValue(C2);
             ui->cValue->setValue(C);
         } else if(twoLs) {
-            for(auto b : ui->cGroup->buttons()) {
+            for(auto &b : ui->cGroup->buttons()) {
                 b->setEnabled(false);
             }
-            for(auto b : ui->lGroup->buttons()) {
+            for(auto &b : ui->lGroup->buttons()) {
                 b->setEnabled(true);
             }
             ui->lC->setText("L2:");
@@ -193,10 +193,10 @@ void ImpedanceMatchDialog::calculateMatch()
             ui->cValue->setValue(L2);
             ui->lValue->setValue(L);
         } else {
-            for(auto b : ui->cGroup->buttons()) {
+            for(auto &b : ui->cGroup->buttons()) {
                 b->setEnabled(true);
             }
-            for(auto b : ui->lGroup->buttons()) {
+            for(auto &b : ui->lGroup->buttons()) {
                 b->setEnabled(true);
             }
             ui->lC->setText("C:");
@@ -265,7 +265,7 @@ void ImpedanceMatchDialog::calculateMatch()
                 ui->Image->setPixmap(QPixmap(":/icons/pCsC_small.png"));
             }
         }
-    } catch (exception e){
+    } catch (exception &e){
         // something went wrong, probably caused by (intermediate) invalid input, such as f=0Hz
         ui->lValue->setValue(nan(""));
         ui->cValue->setValue(nan(""));
