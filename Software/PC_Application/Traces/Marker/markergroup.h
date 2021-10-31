@@ -1,9 +1,9 @@
 ﻿#ifndef MARKERGROUP_H
 #define MARKERGROUP_H
 
-#include <QObject>
-
 #include "marker.h"
+
+#include <QObject>
 
 class MarkerGroup : public QObject
 {
@@ -11,7 +11,7 @@ class MarkerGroup : public QObject
 public:
     MarkerGroup(unsigned int number)
         : adjustingMarkers(false),
-          isTimeDomain(false),
+          domain(Trace::DataType::Invalid),
           markers(),
           number(number){};
     ~MarkerGroup();
@@ -31,7 +31,7 @@ private:
     // Check if marker still applicable for group, remove if necessary
     void checkMarker(Marker *m);
     bool adjustingMarkers;
-    bool isTimeDomain;
+    Trace::DataType domain;
     std::set<Marker*> markers;
     unsigned int number;
 };

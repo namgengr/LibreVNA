@@ -3,6 +3,7 @@
 
 #include "deembeddingoption.h"
 #include "Tools/parameters.h"
+
 #include <complex>
 #include <QMessageBox>
 
@@ -41,7 +42,6 @@ private:
     std::vector<Point> points;
     bool measuring2xthru;
     bool measuringDUT;
-    QMessageBox *msgBox;
     Ui::TwoThruDialog *ui;
 };
 

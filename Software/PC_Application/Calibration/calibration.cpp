@@ -1,11 +1,14 @@
 #include "calibration.h"
+
+#include "unit.h"
+#include "Tools/parameters.h"
+#include "CustomWidgets/informationbox.h"
+
+#include <QDebug>
 #include <algorithm>
 #include <QMessageBox>
 #include <QFileDialog>
 #include <fstream>
-#include "unit.h"
-#include <QDebug>
-#include "Tools/parameters.h"
 
 using namespace std;
 
@@ -25,11 +28,50 @@ Calibration::Calibration()
     type = Type::None;
 }
 
+Calibration::Standard Calibration::getPort1Standard(Calibration::Measurement m)
+{
+    switch(m) {
+    case Measurement::Port1Open: return Standard::Open;
+    case Measurement::Port1Short: return Standard::Short;
+    case Measurement::Port1Load: return Standard::Load;
+    case Measurement::Port2Open: return Standard::Any;
+    case Measurement::Port2Short: return Standard::Any;
+    case Measurement::Port2Load: return Standard::Any;
+    case Measurement::Through: return Standard::Through;
+    case Measurement::Isolation: return Standard::Load;
+    case Measurement::Line: return Standard::Through;
+    default: return Standard::Any;
+    }
+}
+
+Calibration::Standard Calibration::getPort2Standard(Calibration::Measurement m)
+{
+    switch(m) {
+    case Measurement::Port1Open: return Standard::Any;
+    case Measurement::Port1Short: return Standard::Any;
+    case Measurement::Port1Load: return Standard::Any;
+    case Measurement::Port2Open: return Standard::Open;
+    case Measurement::Port2Short: return Standard::Short;
+    case Measurement::Port2Load: return Standard::Load;
+    case Measurement::Through: return Standard::Through;
+    case Measurement::Isolation: return Standard::Load;
+    case Measurement::Line: return Standard::Through;
+    default: return Standard::Any;
+    }
+}
+
 void Calibration::clearMeasurements()
 {
     qDebug() << "Clearing all calibration measurements...";
     for(auto m : measurements) {
         clearMeasurement(m.first);
+    }
+}
+
+void Calibration::clearMeasurements(std::set<Calibration::Measurement> types)
+{
+    for(auto t : types) {
+        clearMeasurement(t);
     }
 }
 
@@ -44,6 +86,13 @@ void Calibration::addMeasurement(Calibration::Measurement type, Protocol::Datapo
 {
     measurements[type].datapoints.push_back(d);
     measurements[type].timestamp = QDateTime::currentDateTime();
+}
+
+void Calibration::addMeasurements(std::set<Calibration::Measurement> types, Protocol::Datapoint &d)
+{
+    for(auto t : types) {
+        addMeasurement(t, d);
+    }
 }
 
 bool Calibration::calculationPossible(Calibration::Type type)
@@ -81,7 +130,7 @@ bool Calibration::constructErrorTerms(Calibration::Type type)
                 + "The measured calibration data covers " + Unit::ToString(minFreq, "Hz", " kMG", 4) + " to " + Unit::ToString(maxFreq, "Hz", " kMG", 4)
                 + ", however the calibration kit is only valid from " + Unit::ToString(kit_minFreq, "Hz", " kMG", 4) + " to " + Unit::ToString(kit_maxFreq, "Hz", " kMG", 4) + ".\n\n"
                 + "Please adjust the calibration kit or the span and take the calibration measurements again.";
-        QMessageBox::critical(nullptr, "Unable to perform calibration", msg);
+        InformationBox::ShowError("Unable to perform calibration", msg);
         qWarning() << msg;
         return false;
     }
@@ -400,30 +449,33 @@ void Calibration::correctTraces(Trace &S11, Trace &S12, Trace &S21, Trace &S22)
     }
 }
 
-Calibration::InterpolationType Calibration::getInterpolation(Protocol::SweepSettings settings)
+Calibration::InterpolationType Calibration::getInterpolation(double f_start, double f_stop, int npoints)
 {
     if(!points.size()) {
         return InterpolationType::NoCalibration;
     }
-    if(settings.f_start < points.front().frequency || settings.f_stop > points.back().frequency) {
+    if(f_start < points.front().frequency || f_stop > points.back().frequency) {
         return InterpolationType::Extrapolate;
     }
     // Either exact or interpolation, check individual frequencies
     uint32_t f_step;
-    if(settings.points > 1) {
-        f_step = (settings.f_stop - settings.f_start) / (settings.points - 1);
+    if(npoints > 1) {
+        f_step = (f_stop - f_start) / (npoints - 1);
     } else {
-        f_step = settings.f_stop - settings.f_start;
+        f_step = f_stop - f_start;
     }
-    for(uint64_t f = settings.f_start; f <= settings.f_stop; f += f_step) {
+    uint64_t f = f_start;
+    do {
         if(find_if(points.begin(), points.end(), [&f](const Point& p){
             return abs(f - p.frequency) < 100;
         }) == points.end()) {
             return InterpolationType::Interpolate;
         }
-    }
+        f += f_step;
+    } while(f <= f_stop && f_step > std::numeric_limits<double>::epsilon());
+
     // if we get here all frequency points were matched
-    if(points.front().frequency == settings.f_start && points.back().frequency == settings.f_stop) {
+    if(points.front().frequency == f_start && points.back().frequency == f_stop) {
         return InterpolationType::Unchanged;
     } else {
         return InterpolationType::Exact;
@@ -617,7 +669,7 @@ std::vector<Trace *> Calibration::getErrorTermTraces()
             case 10: d.y = p.re22; break;
             case 11: d.y = p.re03; break;
             }
-            traces[i]->addData(d);
+            traces[i]->addData(d, TraceMath::DataType::Frequency);
         }
     }
     return traces;
@@ -665,7 +717,7 @@ std::vector<Trace *> Calibration::getMeasurementTraces()
                     } else {
                         d.y = complex<double>(p.real_S22, p.imag_S22);
                     }
-                    t->addData(d);
+                    t->addData(d, TraceMath::DataType::Frequency);
                 }
                 traces.push_back(t);
             }
@@ -683,6 +735,13 @@ bool Calibration::openFromFile(QString filename)
             return false;
         }
     }
+
+    // force correct file ending
+    if(filename.toLower().endsWith(".cal")) {
+        filename.chop(4);
+        filename += ".cal";
+    }
+
     qDebug() << "Attempting to open calibration from file" << filename;
 
     // reset all data before loading new calibration
@@ -700,16 +759,24 @@ bool Calibration::openFromFile(QString filename)
     try {
         kit = Calkit::fromFile(calkit_file);
     } catch (runtime_error e) {
-        QMessageBox::warning(nullptr, "Missing calibration kit", "The calibration kit file associated with the selected calibration could not be parsed. The calibration might not be accurate. (" + QString(e.what()) + ")");
+        InformationBox::ShowError("Missing calibration kit", "The calibration kit file associated with the selected calibration could not be parsed. The calibration might not be accurate. (" + QString(e.what()) + ")");
         qWarning() << "Parsing of calibration kit failed while opening calibration file: " << e.what();
     }
 
     ifstream file;
+
     file.open(filename.toStdString());
+    if(!file.good()) {
+        QString msg = "Unable to open file: "+filename;
+        InformationBox::ShowError("Error", msg);
+        qWarning() << msg;
+        return false;
+    }
+
     try {
         file >> *this;
-    } catch(runtime_error e) {
-        QMessageBox::warning(nullptr, "File parsing error", e.what());
+    } catch(exception e) {
+        InformationBox::ShowError("File parsing error", e.what());
         qWarning() << "Calibration file parsing failed: " << e.what();
         return false;
     }
@@ -729,7 +796,7 @@ bool Calibration::saveToFile(QString filename)
         }
     }
 
-    if(filename.endsWith(".cal")) {
+    if(filename.toLower().endsWith(".cal")) {
         filename.chop(4);
     }
     auto calibration_file = filename + ".cal";

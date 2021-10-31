@@ -1,8 +1,9 @@
 #include "mode.h"
 
+#include "ui_main.h"
+
 #include <QPushButton>
 #include <QSettings>
-#include "ui_main.h"
 #include <QDebug>
 #include <QFileDialog>
 
@@ -88,6 +89,14 @@ void Mode::activate()
     }
 
     activeMode = this;
+    // force activation of correct pushbutton in case the mode switch was done via script/setup load.
+    // This will trigger a second activation of this mode in the signal of the button, but since it is
+    // already the active mode, this function will just return -> no recursion
+    for(auto b : modeButtonGroup->buttons()) {
+        if(b->text() == name) {
+            b->click();
+        }
+    }
 
     if(window->getDevice()) {
         initializeDevice();

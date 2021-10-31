@@ -1,7 +1,9 @@
 #include "calkitdialog.h"
-#include "ui_calkitdialog.h"
-#include <QPushButton>
 
+#include "ui_calkitdialog.h"
+#include "CustomWidgets/informationbox.h"
+
+#include <QPushButton>
 #include <QDebug>
 #include <QFileDialog>
 #include <fstream>
@@ -119,7 +121,12 @@ CalkitDialog::CalkitDialog(Calkit &c, QWidget *parent) :
     connect(ui->buttonBox->button(QDialogButtonBox::Open), &QPushButton::clicked, [=](){
         auto filename = QFileDialog::getOpenFileName(this, "Open calibration kit coefficients", "", "Calibration kit files (*.calkit)", nullptr, QFileDialog::DontUseNativeDialog);
         if(filename.length() > 0) {
-            ownKit = Calkit::fromFile(filename);
+            try {
+                ownKit = Calkit::fromFile(filename);
+            } catch (runtime_error e) {
+                InformationBox::ShowError("Error", "The calibration kit file could not be parsed (" + QString(e.what()) + ")");
+                qWarning() << "Parsing of calibration kit failed while opening calibration file: " << e.what();
+            }
             updateEntries();
         }
     });
@@ -140,6 +147,10 @@ CalkitDialog::~CalkitDialog()
 
 void CalkitDialog::parseEntries()
 {
+    ownKit.manufacturer = ui->manufacturer->text();
+    ownKit.serialnumber = ui->serialnumber->text();
+    ownKit.description = ui->description->toPlainText();
+
     // type
     ownKit.SOLT.Open.useMeasurements = ui->open_measurement->isChecked();
     ownKit.SOLT.Short.useMeasurements = ui->short_measurement->isChecked();
@@ -196,6 +207,10 @@ void CalkitDialog::parseEntries()
 
 void CalkitDialog::updateEntries()
 {
+    ui->manufacturer->setText(ownKit.manufacturer);
+    ui->serialnumber->setText(ownKit.serialnumber);
+    ui->description->setPlainText(ownKit.description);
+
     // Coefficients
     ui->open_Z0->setValueQuiet(ownKit.SOLT.Open.Z0);
     ui->open_delay->setValueQuiet(ownKit.SOLT.Open.delay);

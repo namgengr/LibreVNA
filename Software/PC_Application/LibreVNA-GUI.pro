@@ -11,6 +11,7 @@ HEADERS += \
     Calibration/receivercaldialog.h \
     Calibration/sourcecaldialog.h \
     CustomWidgets/colorpickerbutton.h \
+    CustomWidgets/csvimport.h \
     CustomWidgets/informationbox.h \
     CustomWidgets/jsonpickerdialog.h \
     CustomWidgets/siunitedit.h \
@@ -138,6 +139,7 @@ SOURCES += \
     Calibration/receivercaldialog.cpp \
     Calibration/sourcecaldialog.cpp \
     CustomWidgets/colorpickerbutton.cpp \
+    CustomWidgets/csvimport.cpp \
     CustomWidgets/informationbox.cpp \
     CustomWidgets/jsonpickerdialog.cpp \
     CustomWidgets/siunitedit.cpp \
@@ -253,6 +255,7 @@ FORMS += \
     Calibration/calkitdialog.ui \
     Calibration/frequencycaldialog.ui \
     Calibration/manualcalibrationdialog.ui \
+    CustomWidgets/csvimport.ui \
     CustomWidgets/jsonpickerdialog.ui \
     CustomWidgets/tilewidget.ui \
     CustomWidgets/touchstoneimport.ui \
@@ -300,5 +303,5 @@ RESOURCES += \
 CONFIG += c++17
 REVISION = $$system(git rev-parse HEAD)
 DEFINES += GITHASH=\\"\"$$REVISION\\"\"
-DEFINES += FW_MAJOR=1 FW_MINOR=1 FW_PATCH=2 FW_SUFFIX=""#\\"\"-alpha.2\\"\"
+DEFINES += FW_MAJOR=1 FW_MINOR=2 FW_PATCH=0 FW_SUFFIX=""#\\"\"-alpha.2\\"\"
 DEFINES -= _UNICODE UNICODE

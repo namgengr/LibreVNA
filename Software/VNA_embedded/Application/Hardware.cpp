@@ -75,7 +75,7 @@ void HW::Work() {
 }
 
 bool HW::Init() {
-#ifdef USE_DEBUG_PINS
+#if USE_DEBUG_PINS
 	// initialize debug pins
 	GPIO_InitTypeDef gpio;
 	gpio.Pin = DEBUG1_PIN;
@@ -231,6 +231,7 @@ void HW::SetIdle() {
 	FPGA::Enable(FPGA::Periphery::Port2Mixer, false);
 	FPGA::Enable(FPGA::Periphery::RefMixer, false);
 	FPGA::Enable(FPGA::Periphery::PortSwitch, false);
+	activeMode = Mode::Idle;
 }
 
 HW::AmplitudeSettings HW::GetAmplitudeSettings(int16_t cdbm, uint64_t freq, bool applyCorrections, bool port2) {
@@ -307,7 +308,7 @@ void HW::fillDeviceInfo(Protocol::DeviceInfo *info, bool updateEvenWhenBusy) {
 		LOG_INFO("ADC limits: P1: %d/%d P2: %d/%d R: %d/%d",
 				limits.P1min, limits.P1max, limits.P2min, limits.P2max,
 				limits.Rmin, limits.Rmax);
-	#define ADC_LIMIT 		30000
+	#define ADC_LIMIT 		27000
 		if(limits.P1min < -ADC_LIMIT || limits.P1max > ADC_LIMIT
 				|| limits.P2min < -ADC_LIMIT || limits.P2max > ADC_LIMIT
 				|| limits.Rmin < -ADC_LIMIT || limits.Rmax > ADC_LIMIT) {

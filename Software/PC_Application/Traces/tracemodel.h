@@ -1,11 +1,12 @@
 #ifndef TRACEMODEL_H
 #define TRACEMODEL_H
 
-#include <QAbstractTableModel>
-#include "trace.h"
-#include <vector>
 #include "Device/device.h"
 #include "savable.h"
+#include "trace.h"
+
+#include <QAbstractTableModel>
+#include <vector>
 
 class MarkerModel;
 
@@ -54,7 +55,7 @@ signals:
 
 public slots:
     void clearLiveData();
-    void addVNAData(const Protocol::Datapoint& d, const Protocol::SweepSettings& settings);
+    void addVNAData(const Protocol::Datapoint& d, TraceMath::DataType datatype);
     void addSAData(const Protocol::SpectrumAnalyzerResult& d, const Protocol::SpectrumAnalyzerSettings& settings);
 
 private:

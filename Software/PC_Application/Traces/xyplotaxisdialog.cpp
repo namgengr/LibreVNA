@@ -1,5 +1,7 @@
 #include "xyplotaxisdialog.h"
+
 #include "ui_xyplotaxisdialog.h"
+
 #include <QStandardItemModel>
 
 using namespace std;
@@ -12,10 +14,16 @@ XYplotAxisDialog::XYplotAxisDialog(TraceXYPlot *plot) :
     ui->setupUi(this);
     ui->Y1type->clear();
     ui->Y2type->clear();
+    ui->Y1type->setMaxVisibleItems(20);
+    ui->Y2type->setMaxVisibleItems(20);
 
     for(int i=0;i<(int) TraceXYPlot::YAxisType::Last;i++) {
         ui->Y1type->addItem(TraceXYPlot::AxisTypeToName((TraceXYPlot::YAxisType) i));
         ui->Y2type->addItem(TraceXYPlot::AxisTypeToName((TraceXYPlot::YAxisType) i));
+    }
+
+    for(int i=0;i<(int) TraceXYPlot::XAxisType::Last;i++) {
+        ui->XType->addItem(TraceXYPlot::AxisTypeToName((TraceXYPlot::XAxisType) i));
     }
 
     // Setup GUI connections
@@ -178,10 +186,14 @@ std::set<TraceXYPlot::YAxisType> XYplotAxisDialog::supportedYAxis(TraceXYPlot::X
     set<TraceXYPlot::YAxisType> ret = {TraceXYPlot::YAxisType::Disabled};
     switch(type) {
     case TraceXYPlot::XAxisType::Frequency:
+    case TraceXYPlot::XAxisType::Power:
         ret.insert(TraceXYPlot::YAxisType::Magnitude);
         ret.insert(TraceXYPlot::YAxisType::Phase);
         ret.insert(TraceXYPlot::YAxisType::VSWR);
+        ret.insert(TraceXYPlot::YAxisType::Real);
+        ret.insert(TraceXYPlot::YAxisType::Imaginary);
         ret.insert(TraceXYPlot::YAxisType::SeriesR);
+        ret.insert(TraceXYPlot::YAxisType::Reactance);
         ret.insert(TraceXYPlot::YAxisType::Capacitance);
         ret.insert(TraceXYPlot::YAxisType::Inductance);
         ret.insert(TraceXYPlot::YAxisType::QualityFactor);

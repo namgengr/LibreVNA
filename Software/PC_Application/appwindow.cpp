@@ -1,4 +1,39 @@
 #include "appwindow.h"
+
+#include "unit.h"
+#include "CustomWidgets/toggleswitch.h"
+#include "Device/manualcontroldialog.h"
+#include "Traces/tracemodel.h"
+#include "Traces/tracewidget.h"
+#include "Traces/tracesmithchart.h"
+#include "Traces/tracexyplot.h"
+#include "Traces/traceimportdialog.h"
+#include "CustomWidgets/tilewidget.h"
+#include "CustomWidgets/siunitedit.h"
+#include "Traces/Marker/markerwidget.h"
+#include "Tools/impedancematchdialog.h"
+#include "Calibration/calibrationtracedialog.h"
+#include "ui_main.h"
+#include "Device/firmwareupdatedialog.h"
+#include "preferences.h"
+#include "Generator/signalgenwidget.h"
+#include "VNA/vna.h"
+#include "Generator/generator.h"
+#include "SpectrumAnalyzer/spectrumanalyzer.h"
+#include "Calibration/sourcecaldialog.h"
+#include "Calibration/receivercaldialog.h"
+#include "Calibration/frequencycaldialog.h"
+#include "CustomWidgets/jsonpickerdialog.h"
+#include "CustomWidgets/informationbox.h"
+#include "Util/app_common.h"
+#include "about.h"
+
+#include <QDockWidget>
+#include <QDesktopWidget>
+#include <QApplication>
+#include <QActionGroup>
+#include <mode.h>
+#include <QDebug>
 #include <QGridLayout>
 #include <QVBoxLayout>
 #include <QHBoxLayout>
@@ -19,39 +54,7 @@
 #include <iostream>
 #include <fstream>
 #include <QDateTime>
-#include "unit.h"
-#include "CustomWidgets/toggleswitch.h"
-#include "Device/manualcontroldialog.h"
-#include "Traces/tracemodel.h"
-#include "Traces/tracewidget.h"
-#include "Traces/tracesmithchart.h"
-#include "Traces/tracexyplot.h"
-#include "Traces/traceimportdialog.h"
-#include "CustomWidgets/tilewidget.h"
-#include "CustomWidgets/siunitedit.h"
-#include <QDockWidget>
-#include "Traces/Marker/markerwidget.h"
-#include "Tools/impedancematchdialog.h"
-#include "Calibration/calibrationtracedialog.h"
-#include "ui_main.h"
-#include "Device/firmwareupdatedialog.h"
-#include "preferences.h"
-#include "Generator/signalgenwidget.h"
-#include <QDesktopWidget>
-#include <QApplication>
-#include <QActionGroup>
-#include <mode.h>
-#include "VNA/vna.h"
-#include "Generator/generator.h"
-#include "SpectrumAnalyzer/spectrumanalyzer.h"
-#include "Calibration/sourcecaldialog.h"
-#include "Calibration/receivercaldialog.h"
-#include "Calibration/frequencycaldialog.h"
-#include <QDebug>
-#include "CustomWidgets/jsonpickerdialog.h"
 #include <QCommandLineParser>
-#include "Util/app_common.h"
-#include "about.h"
 
 using namespace std;
 
@@ -92,39 +95,21 @@ AppWindow::AppWindow(QWidget *parent)
         auto port = parser.value("port").toUInt(&OK);
         if(!OK) {
             // set default port
-            port = Preferences::getInstance().General.SCPI.port;
+            port = Preferences::getInstance().SCPIServer.port;
         }
         StartTCPServer(port);
         Preferences::getInstance().manualTCPport();
-    } else if(Preferences::getInstance().General.SCPI.enabled) {
-        StartTCPServer(Preferences::getInstance().General.SCPI.port);
+    } else if(Preferences::getInstance().SCPIServer.enabled) {
+        StartTCPServer(Preferences::getInstance().SCPIServer.port);
     }
 
     ui->setupUi(this);
-    ui->statusbar->addWidget(&lConnectionStatus);
-    auto div1 = new QFrame;
-    div1->setFrameShape(QFrame::VLine);
-    ui->statusbar->addWidget(div1);
-    ui->statusbar->addWidget(&lDeviceInfo);
-    ui->statusbar->addWidget(new QLabel, 1);
 
-    lADCOverload.setStyleSheet("color : red");
-    lADCOverload.setText("ADC overload");
-    lADCOverload.setVisible(false);
-    ui->statusbar->addWidget(&lADCOverload);
-
-    lUnlevel.setStyleSheet("color : red");
-    lUnlevel.setText("Unlevel");
-    lUnlevel.setVisible(false);
-    ui->statusbar->addWidget(&lUnlevel);
-
-    lUnlock.setStyleSheet("color : red");
-    lUnlock.setText("Unlock");
-    lUnlock.setVisible(false);
-    ui->statusbar->addWidget(&lUnlock);
-    //ui->statusbar->setStyleSheet("QStatusBar::item { border: 1px solid black; };");
+    SetupStatusBar();
+    UpdateStatusBar(DeviceStatusBar::Disconnected);
 
     CreateToolbars();
+
     auto logDock = new QDockWidget("Device Log");
     logDock->setWidget(&deviceLog);
     logDock->setObjectName("Log Dock");
@@ -178,7 +163,12 @@ AppWindow::AppWindow(QWidget *parent)
             return;
         }
         nlohmann::json j;
-        file >> j;
+        try {
+            file >> j;
+        } catch (exception &e) {
+            InformationBox::ShowError("Error", "Failed to parse the setup file (" + QString(e.what()) + ")");
+            qWarning() << "Parsing of setup file failed: " << e.what();
+        }
         file.close();
         LoadSetup(j);
     });
@@ -194,13 +184,13 @@ AppWindow::AppWindow(QWidget *parent)
     connect(ui->actionPreferences, &QAction::triggered, [=](){
         // save previous SCPI settings in case they change
         auto &p = Preferences::getInstance();
-        auto SCPIenabled = p.General.SCPI.enabled;
-        auto SCPIport = p.General.SCPI.port;
+        auto SCPIenabled = p.SCPIServer.enabled;
+        auto SCPIport = p.SCPIServer.port;
         p.edit();
-        if(SCPIenabled != p.General.SCPI.enabled || SCPIport != p.General.SCPI.port) {
+        if(SCPIenabled != p.SCPIServer.enabled || SCPIport != p.SCPIServer.port) {
             StopTCPServer();
-            if(p.General.SCPI.enabled) {
-                StartTCPServer(p.General.SCPI.port);
+            if(p.SCPIServer.enabled) {
+                StartTCPServer(p.SCPIServer.port);
             }
         }
         auto active = Mode::getActiveMode();
@@ -247,8 +237,11 @@ AppWindow::AppWindow(QWidget *parent)
         ConnectToDevice();
     }
     if(!parser.isSet("no-gui")) {
+        InformationBox::setGUI(true);
         resize(1280, 800);
         show();
+    } else {
+        InformationBox::setGUI(false);
     }
 }
 
@@ -288,16 +281,11 @@ bool AppWindow::ConnectToDevice(QString serial)
     try {
         qDebug() << "Attempting to connect to device...";
         device = new Device(serial);
-        lConnectionStatus.setText("Connected to " + device->serial());
-        qInfo() << "Connected to" << device->serial();
-        lDeviceInfo.setText(device->getLastDeviceInfoString());
+        UpdateStatusBar(AppWindow::DeviceStatusBar::Connected);
         connect(device, &Device::LogLineReceived, &deviceLog, &DeviceLog::addLine);
         connect(device, &Device::ConnectionLost, this, &AppWindow::DeviceConnectionLost);
         connect(device, &Device::DeviceInfoUpdated, [this]() {
-           lDeviceInfo.setText(device->getLastDeviceInfoString());
-           lADCOverload.setVisible(device->Info().ADC_overload);
-           lUnlevel.setVisible(device->Info().unlevel);
-           lUnlock.setVisible(!device->Info().LO1_locked || !device->Info().source_locked);
+            UpdateStatusBar(AppWindow::DeviceStatusBar::Updated);
         });
         connect(device, &Device::NeedsFirmwareUpdate, this, &AppWindow::DeviceNeedsUpdate);
         ui->actionDisconnect->setEnabled(true);
@@ -343,8 +331,7 @@ void AppWindow::DisconnectDevice()
     if(deviceActionGroup->checkedAction()) {
         deviceActionGroup->checkedAction()->setChecked(false);
     }
-    lConnectionStatus.setText("No device connected");
-    lDeviceInfo.setText("No device information available yet");
+    UpdateStatusBar(DeviceStatusBar::Disconnected);
     Mode::getActiveMode()->deviceDisconnected();
     qDebug() << "Disconnected device";
 }
@@ -352,7 +339,7 @@ void AppWindow::DisconnectDevice()
 void AppWindow::DeviceConnectionLost()
 {
     DisconnectDevice();
-    QMessageBox::warning(this, "Disconnected", "The USB connection to the device has been lost");
+    InformationBox::ShowError("Disconnected", "The USB connection to the device has been lost");
     UpdateDeviceList();
 }
 
@@ -880,12 +867,11 @@ void AppWindow::StartFirmwareUpdateDialog()
 
 void AppWindow::DeviceNeedsUpdate(int reported, int expected)
 {
-    auto ret = QMessageBox::warning(this, "Warning",
+    auto ret = InformationBox::AskQuestion("Warning",
                                 "The device reports a different protocol"
                                 "version (" + QString::number(reported) + ") than expected (" + QString::number(expected) + ").\n"
-                                "A firmware update is strongly recommended. Do you want to update now?",
-                                   QMessageBox::Yes | QMessageBox::No, QMessageBox::Yes);
-    if (ret == QMessageBox::Yes) {
+                                "A firmware update is strongly recommended. Do you want to update now?", false);
+    if (ret) {
         StartFirmwareUpdateDialog();
     }
 }
@@ -911,6 +897,7 @@ void AppWindow::FrequencyCalibrationDialog()
 nlohmann::json AppWindow::SaveSetup()
 {
     nlohmann::json j;
+    j["activeMode"] = Mode::getActiveMode()->getName().toStdString();
     j["VNA"] = vna->toJSON();
     j["Generator"] = generator->toJSON();
     j["SpectrumAnalyzer"] = spectrumAnalyzer->toJSON();
@@ -924,6 +911,16 @@ void AppWindow::LoadSetup(nlohmann::json j)
     vna->fromJSON(j["VNA"]);
     generator->fromJSON(j["Generator"]);
     spectrumAnalyzer->fromJSON(j["SpectrumAnalyzer"]);
+
+    // activate the correct mode
+    QString modeName = QString::fromStdString(j.value("activeMode", ""));
+    std::vector<Mode*> modes = {vna, generator, spectrumAnalyzer};
+    for(auto m : modes) {
+        if(m->getName() == modeName) {
+            m->activate();
+            break;
+        }
+    }
 }
 
 Device *AppWindow::getDevice() const
@@ -949,4 +946,55 @@ const QString& AppWindow::getAppVersion() const
 const QString& AppWindow::getAppGitHash() const
 {
     return appGitHash;
+}
+
+void AppWindow::SetupStatusBar()
+{
+    ui->statusbar->addWidget(&lConnectionStatus);
+    auto div1 = new QFrame;
+    div1->setFrameShape(QFrame::VLine);
+    ui->statusbar->addWidget(div1);
+    ui->statusbar->addWidget(&lDeviceInfo);
+    ui->statusbar->addWidget(new QLabel, 1);
+
+    lADCOverload.setStyleSheet("color : red");
+    lADCOverload.setText("ADC overload");
+    lADCOverload.setVisible(false);
+    ui->statusbar->addWidget(&lADCOverload);
+
+    lUnlevel.setStyleSheet("color : red");
+    lUnlevel.setText("Unlevel");
+    lUnlevel.setVisible(false);
+    ui->statusbar->addWidget(&lUnlevel);
+
+    lUnlock.setStyleSheet("color : red");
+    lUnlock.setText("Unlock");
+    lUnlock.setVisible(false);
+    ui->statusbar->addWidget(&lUnlock);
+    //ui->statusbar->setStyleSheet("QStatusBar::item { border: 1px solid black; };");
+}
+
+void AppWindow::UpdateStatusBar(DeviceStatusBar status)
+{
+    switch(status) {
+    case DeviceStatusBar::Connected:
+        lConnectionStatus.setText("Connected to " + device->serial());
+        qInfo() << "Connected to" << device->serial();
+        lDeviceInfo.setText(device->getLastDeviceInfoString());
+        break;
+    case DeviceStatusBar::Disconnected:
+        lConnectionStatus.setText("No device connected");
+        lDeviceInfo.setText("No device information available yet");
+        break;
+    case DeviceStatusBar::Updated:
+        lDeviceInfo.setText(device->getLastDeviceInfoString());
+        lADCOverload.setVisible(device->Info().ADC_overload);
+        lUnlevel.setVisible(device->Info().unlevel);
+        lUnlock.setVisible(!device->Info().LO1_locked || !device->Info().source_locked);
+        break;
+    default:
+        // invalid status
+        break;
+    }
+
 }

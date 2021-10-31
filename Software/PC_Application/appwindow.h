@@ -1,27 +1,28 @@
 ﻿#ifndef APPWINDOW_H
 #define APPWINDOW_H
 
-#include <QWidget>
-#include <QMainWindow>
-#include <QGridLayout>
-#include <QComboBox>
-#include <QStackedWidget>
 #include "Device/device.h"
 #include "Traces/traceplot.h"
 #include "Calibration/calibration.h"
-#include <QProgressDialog>
 #include "Traces/tracemodel.h"
 #include "Traces/Marker/markermodel.h"
 #include "averaging.h"
 #include "Device/devicelog.h"
 #include "preferences.h"
+#include "scpi.h"
+#include "tcpserver.h"
+#include "Device/manualcontroldialog.h"
+
+#include <QWidget>
+#include <QMainWindow>
+#include <QGridLayout>
+#include <QComboBox>
+#include <QStackedWidget>
 #include <QButtonGroup>
 #include <QCheckBox>
 #include <QLabel>
 #include <QCommandLineParser>
-#include "scpi.h"
-#include "tcpserver.h"
-#include "Device/manualcontroldialog.h"
+#include <QProgressDialog>
 
 namespace Ui {
 class MainWindow;
@@ -61,7 +62,17 @@ private slots:
     nlohmann::json SaveSetup();
     void LoadSetup(nlohmann::json j);
 private:
+
+    enum class DeviceStatusBar {
+        Connected,
+        Updated,
+        Disconnected,
+    };
+
     void DeviceConnectionLost();
+
+    void SetupStatusBar();
+    void UpdateStatusBar(DeviceStatusBar status);
     void CreateToolbars();
     void SetupSCPI();
     void StartTCPServer(int port);

@@ -1,15 +1,18 @@
 #include "timegate.h"
-#include <QWidget>
-#include <QDialog>
+
 #include "ui_timegatedialog.h"
 #include "ui_timegateexplanationwidget.h"
 #include "preferences.h"
-#include <QPainter>
 #include "Util/util.h"
 #include "Traces/fftcomplex.h"
 #include "Util/util.h"
-#include <QMouseEvent>
 #include "unit.h"
+
+#include <QWidget>
+#include <QDialog>
+#include <QPainter>
+#include <QMouseEvent>
+
 
 Math::TimeGate::TimeGate()
 {
@@ -334,8 +337,8 @@ void Math::TimeGateGraph::paintEvent(QPaintEvent *event)
     auto pref = Preferences::getInstance();
     QPainter p(this);
     // fill background
-    p.setBackground(QBrush(pref.General.graphColors.background));
-    p.fillRect(0, 0, width(), height(), QBrush(pref.General.graphColors.background));
+    p.setBackground(QBrush(pref.Graphs.Color.background));
+    p.fillRect(0, 0, width(), height(), QBrush(pref.Graphs.Color.background));
 
     // plot trace
     auto pen = QPen(Qt::green, 1);

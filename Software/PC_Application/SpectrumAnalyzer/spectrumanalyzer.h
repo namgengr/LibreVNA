@@ -1,15 +1,16 @@
 #ifndef SPECTRUMANALYZER_H
 #define SPECTRUMANALYZER_H
 
-#include <QObject>
-#include <QWidget>
 #include "appwindow.h"
 #include "mode.h"
 #include "CustomWidgets/tilewidget.h"
-#include <QComboBox>
-#include <QCheckBox>
 #include "scpi.h"
 #include "Traces/tracewidget.h"
+
+#include <QObject>
+#include <QWidget>
+#include <QComboBox>
+#include <QCheckBox>
 
 class SpectrumAnalyzer : public Mode, public SCPINode
 {
@@ -32,7 +33,8 @@ private:
         None = 0,
         Kaiser = 1,
         Hann = 2,
-        FlatTop = 3
+        FlatTop = 3,
+        Last
     };
     enum class Detector {
         PPeak = 0,
@@ -40,7 +42,13 @@ private:
         Sample = 2,
         Normal = 3,
         Average = 4,
+        Last
     };
+
+    static QString WindowToString(Window w);
+    static Window WindowFromString(QString s);
+    static QString DetectorToString(Detector d);
+    static Detector DetectorFromString(QString s);
 
 private slots:
     void NewDatapoint(Protocol::SpectrumAnalyzerResult d);

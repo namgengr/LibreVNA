@@ -1,15 +1,16 @@
 #ifndef TRACE_H
 #define TRACE_H
 
+#include "touchstone.h"
+#include "csv.h"
+#include "Device/device.h"
+#include "Math/tracemath.h"
+
 #include <QObject>
 #include <complex>
 #include <map>
 #include <QColor>
 #include <set>
-#include "touchstone.h"
-#include "csv.h"
-#include "Device/device.h"
-#include "Math/tracemath.h"
 
 class Marker;
 
@@ -42,8 +43,7 @@ public:
 
 
     void clear();
-    void addData(const Data& d);
-    void addData(const Data& d, const Protocol::SweepSettings& s);
+    void addData(const Data& d, DataType domain);
     void addData(const Data& d, const Protocol::SpectrumAnalyzerSettings& s);
     void setName(QString name);
     void setVelocityFactor(double v);
@@ -67,7 +67,7 @@ public:
     unsigned int size() const;
     double minX();
     double maxX();
-    double findExtremumFreq(bool max);
+    double findExtremum(bool max);
     /* Searches for peaks in the trace data and returns the peak frequencies in ascending order.
      * Up to maxPeaks will be returned, with higher level peaks taking priority over lower level peaks.
      * Only peaks with at least minLevel will be considered.
@@ -80,8 +80,8 @@ public:
         TimeStep,
     };
 
-    Data sample(unsigned int index, SampleType type = SampleType::Frequency) const;
-    // returns a (possibly interpolated sample) at a specified frequency/time
+    Data sample(unsigned int index, bool getStepResponse = false) const;
+    // returns a (possibly interpolated sample) at a specified frequency/time/power
     Data interpolatedSample(double x);
     QString getFilename() const;
     unsigned int getFileParameter() const;
@@ -173,13 +173,12 @@ private:
     bool paused;
     bool createdFromFile;
     bool calibration;
-    bool timeDomain;
+    DataType domain;
     QString filename;
-    unsigned int fileParemeter;
+    unsigned int fileParameter;
     std::set<Marker*> markers;
     struct {
         union {
-            Protocol::SweepSettings VNA;
             Protocol::SpectrumAnalyzerSettings SA;
         };
         bool valid;

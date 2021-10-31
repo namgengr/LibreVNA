@@ -1,11 +1,15 @@
 #include "traceplot.h"
+
 #include "Marker/marker.h"
-#include "preferences.h"
-#include <QPainter>
-#include <QMimeData>
-#include <QDebug>
 #include "unit.h"
 #include "Marker/markermodel.h"
+#include "preferences.h"
+#include "Util/util.h"
+
+#include <QPainter>
+#include <QPainterPath>
+#include <QMimeData>
+#include <QDebug>
 
 std::set<TracePlot*> TracePlot::plots;
 
@@ -15,6 +19,7 @@ TracePlot::TracePlot(TraceModel &model, QWidget *parent)
     : QWidget(parent),
       model(model),
       selectedMarker(nullptr),
+      traceRemovalPending(false),
       dropPending(false),
       dropTrace(nullptr)
 {
@@ -96,6 +101,17 @@ void TracePlot::initializeTraceInfo()
     connect(&model, &TraceModel::traceAdded, this, &TracePlot::newTraceAvailable);
 }
 
+std::vector<Trace *> TracePlot::activeTraces()
+{
+    std::vector<Trace*> ret;
+    for(auto t : traces) {
+        if(t.second) {
+            ret.push_back(t.first);
+        }
+    }
+    return ret;
+}
+
 void TracePlot::contextMenuEvent(QContextMenuEvent *event)
 {
     auto m = markerAtPosition(event->pos());
@@ -117,30 +133,56 @@ void TracePlot::contextMenuEvent(QContextMenuEvent *event)
 
 void TracePlot::paintEvent(QPaintEvent *event)
 {
+    if(traceRemovalPending) {
+        for(auto t : traces) {
+            if(!t.second) {
+                // trace already disabled
+            }
+            if(!supported(t.first)) {
+                enableTrace(t.first, false);
+            }
+        }
+        traceRemovalPending = false;
+    }
+
     Q_UNUSED(event)
     auto pref = Preferences::getInstance();
     QPainter p(this);
 //    p.setRenderHint(QPainter::Antialiasing);
     // fill background
-    p.setBackground(QBrush(pref.General.graphColors.background));
-    p.fillRect(0, 0, width(), height(), QBrush(pref.General.graphColors.background));
+    p.setBackground(QBrush(pref.Graphs.Color.background));
+    p.fillRect(0, 0, width(), height(), QBrush(pref.Graphs.Color.background));
 
     // show names of active traces and marker data (if enabled)
     bool hasMarkerData = false;
     int x = 1; // xcoordinate for the next trace name
     int y = marginTop; // ycoordinate for the next marker data
+    auto areaTextTop = 5;
+    auto labelMarginRight = 4;
+    auto borderRadius = 5;
     for(auto t : traces) {
         if(!t.second || !t.first->isVisible()) {
             continue;
         }
-        auto textArea = QRect(x, 0, width() - x, marginTop);
-        QRect usedArea;
+
+        auto textArea = QRect(x, areaTextTop, width() - x, marginTop);
+
         QFont font = p.font();
         font.setPixelSize(12);
         p.setFont(font);
         p.setPen(t.first->color());
-        p.drawText(textArea, 0, t.first->name() + " ", &usedArea);
-        x += usedArea.width();
+
+        auto space = " ";
+        auto label = space + t.first->name() + space;
+        QRectF usedLabelArea = p.boundingRect(textArea, 0, label);
+        QPainterPath path;
+        path.addRoundedRect(usedLabelArea, borderRadius, borderRadius);
+        p.fillPath(path, t.first->color());
+        p.drawPath(path);
+        p.setPen(Util::getFontColorFromBackground(t.first->color()));
+        p.drawText(textArea, 0, label);
+        p.setPen(t.first->color());
+        x += usedLabelArea.width()+labelMarginRight;
 
         auto tmarkers = t.first->getMarkers();
 
@@ -157,17 +199,29 @@ void TracePlot::paintEvent(QPaintEvent *event)
             }
             hasMarkerData = true;
 
+            auto space = "  ";
             auto textArea = QRect(width() - marginRight - marginMarkerData, y, width() - marginRight, y + 100);
-            p.drawText(textArea, 0, "Marker "+QString::number(m->getNumber())+m->getSuffix()+": "+m->readablePosition(), &usedArea);
-            y += usedArea.height();
+            auto description = m->getSuffix() + space + m->readablePosition();
+            auto label = space + QString::number(m->getNumber()) + space;
+            QRectF textAreaConsumed = p.boundingRect(textArea, 0, label);
+            QPainterPath pathM;
+            pathM.addRoundedRect(textAreaConsumed, borderRadius, borderRadius);
+            p.fillPath(pathM, t.first->color());
+            p.drawPath(pathM);
+
+            p.setPen(Util::getFontColorFromBackground(t.first->color()));
+            p.drawText(textArea, 0, label);
+            p.setPen(t.first->color());
+            p.drawText(textAreaConsumed.x()+textAreaConsumed.width(), textAreaConsumed.y(), textArea.width(), textArea.height(), 0, description);
+            y += textAreaConsumed.height();
 
             for(auto f : m->getGraphDisplayFormats()) {
                 auto textArea = QRect(width() - marginRight - marginMarkerData, y, width() - marginRight, y + 100);
-                p.drawText(textArea, 0, m->readableData(f), &usedArea);
-                y += usedArea.height();
+                p.drawText(textArea, 0, m->readableData(f), &textAreaConsumed);
+                y += textAreaConsumed.height();
             }
             // leave one row empty between markers
-            y += usedArea.height();
+            y += textAreaConsumed.height();
         }
     }
 
@@ -374,7 +428,27 @@ void TracePlot::checkIfStillSupported(Trace *t)
 {
     if(!supported(t)) {
         // something with this trace changed and it can no longer be displayed on this graph
-        enableTrace(t, false);
+        // behavior depends on preferences
+        switch(Preferences::getInstance().Graphs.domainChangeBehavior) {
+        case GraphDomainChangeBehavior::RemoveChangedTraces:
+            // simply remove the changed trace
+            enableTrace(t, false);
+            break;
+        case GraphDomainChangeBehavior::AdjustGrahpsIfOnlyTrace:
+            // remove trace if other traces are present, otherwise try to adjust graph
+            if(activeTraces().size() > 1) {
+                enableTrace(t, false);
+                break;
+            }
+            [[fallthrough]];
+        case GraphDomainChangeBehavior::AdjustGraphs:
+            // attempt to configure the graph for the changed trace, remove only if this fails
+            if(!configureForTrace(t)) {
+                enableTrace(t, false);
+            }
+            break;
+        }
+
     }
 }
 

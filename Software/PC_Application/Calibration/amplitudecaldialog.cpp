@@ -1,16 +1,18 @@
 #include "amplitudecaldialog.h"
+
 #include "ui_amplitudecaldialog.h"
 #include "mode.h"
 #include "unit.h"
-#include <QDebug>
 #include "ui_addamplitudepointsdialog.h"
 #include "ui_automaticamplitudedialog.h"
+#include "json.hpp"
+#include "Util/util.h"
+
+#include <QDebug>
 #include <QMessageBox>
 #include <QFileDialog>
-#include "json.hpp"
 #include <fstream>
 #include <CustomWidgets/informationbox.h>
-#include "Util/util.h"
 
 using namespace std;
 using namespace nlohmann;
@@ -82,7 +84,7 @@ AmplitudeCalDialog::AmplitudeCalDialog(Device *dev, QWidget *parent) :
         file >> j;
         for(auto point : j) {
             if(!point.contains("Frequency") || !point.contains("Port1") || !point.contains("Port2")) {
-                QMessageBox::warning(this, "Error loading file", "Failed to parse calibration point");
+                InformationBox::ShowError("Error loading file", "Failed to parse calibration point");
                 return;
             }
             CorrectionPoint p;
@@ -425,9 +427,7 @@ void AmplitudeCalDialog::ReceivedMeasurement(Protocol::SpectrumAnalyzerResult re
 bool AmplitudeCalDialog::ConfirmActionIfEdited()
 {
     if(edited) {
-        auto reply = QMessageBox::question(this, "Confirm action", "Some points have been edited but not saved in the device yet. If you continue, all changes will be lost (unless they are already saved to a file). Do you want to continue?",
-                                        QMessageBox::Yes|QMessageBox::No);
-        return reply == QMessageBox::Yes;
+        return InformationBox::AskQuestion("Confirm action", "Some points have been edited but not saved in the device yet. If you continue, all changes will be lost (unless they are already saved to a file). Do you want to continue?", true);
     } else {
         // not edited yet, nothing to confirm
         return true;

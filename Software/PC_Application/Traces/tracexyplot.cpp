@@ -1,16 +1,18 @@
 #include "tracexyplot.h"
-#include <QGridLayout>
+
 #include "trace.h"
-#include <cmath>
-#include <QFrame>
+#include "CustomWidgets/informationbox.h"
 #include "Marker/marker.h"
 #include "xyplotaxisdialog.h"
-#include <preferences.h>
-#include <QPainter>
 #include "Util/util.h"
 #include "unit.h"
+#include "preferences.h"
+
+#include <QGridLayout>
+#include <cmath>
+#include <QFrame>
+#include <QPainter>
 #include <QDebug>
-#include "CustomWidgets/informationbox.h"
 #include <QFileDialog>
 
 using namespace std;
@@ -19,6 +21,13 @@ const set<TraceXYPlot::YAxisType> TraceXYPlot::YAxisTypes = {TraceXYPlot::YAxisT
                                            TraceXYPlot::YAxisType::Magnitude,
                                            TraceXYPlot::YAxisType::Phase,
                                            TraceXYPlot::YAxisType::VSWR,
+                                           TraceXYPlot::YAxisType::Real,
+                                           TraceXYPlot::YAxisType::Imaginary,
+                                           TraceXYPlot::YAxisType::SeriesR,
+                                           TraceXYPlot::YAxisType::Reactance,
+                                           TraceXYPlot::YAxisType::Capacitance,
+                                           TraceXYPlot::YAxisType::Inductance,
+                                           TraceXYPlot::YAxisType::QualityFactor,
                                            TraceXYPlot::YAxisType::ImpulseReal,
                                            TraceXYPlot::YAxisType::ImpulseMag,
                                            TraceXYPlot::YAxisType::Step,
@@ -77,7 +86,7 @@ void TraceXYPlot::setYAxis(int axis, TraceXYPlot::YAxisType type, bool log, bool
     YAxis[axis].rangeMin = min;
     YAxis[axis].rangeMax = max;
     YAxis[axis].rangeDiv = div;
-    removeUnsupportedTraces();
+    traceRemovalPending = true;
     updateAxisTicks();
     updateContextMenu();
     replot();
@@ -90,7 +99,7 @@ void TraceXYPlot::setXAxis(XAxisType type, XAxisMode mode, double min, double ma
     XAxis.rangeMin = min;
     XAxis.rangeMax = max;
     XAxis.rangeDiv = div;
-    removeUnsupportedTraces();
+    traceRemovalPending = true;
     updateAxisTicks();
     updateContextMenu();
     replot();
@@ -183,9 +192,9 @@ void TraceXYPlot::fromJSON(nlohmann::json j)
         }
         auto yauto = jY[i].value("autorange", true);
         auto ylog = jY[i].value("log", false);
-        auto ymin = jY[i].value("min", -120);
-        auto ymax = jY[i].value("max", 20);
-        auto ydiv = jY[i].value("div", 10);
+        auto ymin = jY[i].value("min", -120.0);
+        auto ymax = jY[i].value("max", 20.0);
+        auto ydiv = jY[i].value("div", 10.0);
         setYAxis(i, ytype, ylog, yauto, ymin, ymax, ydiv);
         for(unsigned int hash : jY[i]["traces"]) {
             // attempt to find the traces with this hash
@@ -221,6 +230,32 @@ void TraceXYPlot::axisSetupDialog()
 {
     auto setup = new XYplotAxisDialog(this);
     setup->show();
+}
+
+bool TraceXYPlot::configureForTrace(Trace *t)
+{
+    switch(t->outputType()) {
+    case Trace::DataType::Frequency:
+        setXAxis(XAxisType::Frequency, XAxisMode::FitTraces, 0, 1, 0.1);
+        setYAxis(0, YAxisType::Magnitude, false, true, 0, 1, 1.0);
+        setYAxis(1, YAxisType::Phase, false, true, 0, 1, 1.0);
+        break;
+    case Trace::DataType::Time:
+        setXAxis(XAxisType::Time, XAxisMode::FitTraces, 0, 1, 0.1);
+        setYAxis(0, YAxisType::ImpulseMag, false, true, 0, 1, 1.0);
+        setYAxis(1, YAxisType::Disabled, false, true, 0, 1, 1.0);
+        break;
+    case Trace::DataType::Power:
+        setXAxis(XAxisType::Power, XAxisMode::FitTraces, 0, 1, 0.1);
+        setYAxis(0, YAxisType::Magnitude, false, true, 0, 1, 1.0);
+        setYAxis(1, YAxisType::Phase, false, true, 0, 1, 1.0);
+        break;
+    case Trace::DataType::Invalid:
+        // unable to add
+        return false;
+    }
+    traceRemovalPending = true;
+    return true;
 }
 
 void TraceXYPlot::updateContextMenu()
@@ -322,11 +357,12 @@ void TraceXYPlot::draw(QPainter &p)
     constexpr int yAxisDisabledSpace = 10;
     constexpr int xAxisSpace = 30;
     auto w = p.window();
-    auto pen = QPen(pref.General.graphColors.axis, 0);
+    auto pen = QPen(pref.Graphs.Color.axis, 0);
     pen.setCosmetic(true);
     p.setPen(pen);
     plotAreaLeft = YAxis[0].type == YAxisType::Disabled ? yAxisDisabledSpace : yAxisSpace;
     plotAreaWidth = w.width();
+    plotAreaTop = 10;
     plotAreaBottom = w.height() - xAxisSpace;
     if(YAxis[0].type != YAxisType::Disabled) {
         plotAreaWidth -= yAxisSpace;
@@ -339,7 +375,7 @@ void TraceXYPlot::draw(QPainter &p)
         plotAreaWidth -= yAxisDisabledSpace;
     }
 
-    auto plotRect = QRect(plotAreaLeft, 0, plotAreaWidth + 1, plotAreaBottom);
+    auto plotRect = QRect(plotAreaLeft, plotAreaTop, plotAreaWidth + 1, plotAreaBottom-plotAreaTop);
     p.drawRect(plotRect);
 
     // draw axis types
@@ -347,75 +383,12 @@ void TraceXYPlot::draw(QPainter &p)
     font.setPixelSize(AxisLabelSize);
     p.setFont(font);
     p.drawText(QRect(0, w.height()-AxisLabelSize*1.5, w.width(), AxisLabelSize*1.5), Qt::AlignHCenter, AxisTypeToName(XAxis.type));
-    if(XAxis.ticks.size() >= 1) {
-        // draw X ticks
-        // this only works for evenly distributed ticks:
-        auto max = qMax(abs(XAxis.ticks.front()), abs(XAxis.ticks.back()));
-        auto minLabel = qMin(abs(XAxis.ticks.front()), abs(XAxis.ticks.back()));
-        double step;
-        if(XAxis.ticks.size() >= 2) {
-            step = abs(XAxis.ticks[0] - XAxis.ticks[1]);
-        } else {
-            // only one tick, set arbitrary number of digits
-            step = max / 1000;
-        }
-        if(minLabel > 0 && minLabel < step) {
-            step = minLabel;
-        }
-        int significantDigits = floor(log10(max)) - floor(log10(step)) + 1;
-        bool displayFullFreq = significantDigits <= 5;
-        constexpr int displayLastDigits = 4;
-        QString prefixes = "fpnum kMG";
-        QString commonPrefix = QString();
-        if(!displayFullFreq) {
-            auto fullFreq = Unit::ToString(XAxis.ticks.front(), "", prefixes, significantDigits);
-            commonPrefix = fullFreq.at(fullFreq.size() - 1);
-            auto front = fullFreq;
-            front.truncate(fullFreq.size() - displayLastDigits);
-            auto back = fullFreq;
-            back.remove(0, front.size());
-            back.append("..");
-            p.setPen(QPen(QColor("orange")));
-            QRect bounding;
-            p.drawText(QRect(2, plotAreaBottom + AxisLabelSize + 5, w.width(), AxisLabelSize), 0, front, &bounding);
-            p.setPen(pref.General.graphColors.axis);
-            p.drawText(QRect(bounding.x() + bounding.width(), plotAreaBottom + AxisLabelSize + 5, w.width(), AxisLabelSize), 0, back);
-        }
-
-        for(auto t : XAxis.ticks) {
-            auto xCoord = Util::Scale<double>(t, XAxis.rangeMin, XAxis.rangeMax, plotAreaLeft, plotAreaLeft + plotAreaWidth);
-            auto tickValue = Unit::ToString(t, "", prefixes, significantDigits);
-            p.setPen(QPen(pref.General.graphColors.axis, 1));
-            if(displayFullFreq) {
-                p.drawText(QRect(xCoord - 40, plotAreaBottom + 5, 80, AxisLabelSize), Qt::AlignHCenter, tickValue);
-            } else {
-                // check if the same prefix was used as in the fullFreq string
-                if(tickValue.at(tickValue.size() - 1) != commonPrefix) {
-                    // prefix changed, we reached the next order of magnitude. Force same prefix as in fullFreq and add extra digit
-                    tickValue = Unit::ToString(t, "", commonPrefix, significantDigits + 1);
-                }
-
-                tickValue.remove(0, tickValue.size() - displayLastDigits);
-                QRect bounding;
-                p.drawText(QRect(xCoord - 40, plotAreaBottom + 5, 80, AxisLabelSize), Qt::AlignHCenter, tickValue, &bounding);
-                p.setPen(QPen(QColor("orange")));
-                p.drawText(QRect(0, plotAreaBottom + 5, bounding.x() - 1, AxisLabelSize), Qt::AlignRight, "..");
-                p.setPen(QPen(pref.General.graphColors.axis, 1));
-            }
-            p.drawLine(xCoord, plotAreaBottom, xCoord, plotAreaBottom + 2);
-            if(xCoord != plotAreaLeft && xCoord != plotAreaLeft + plotAreaWidth) {
-                p.setPen(QPen(pref.General.graphColors.divisions, 0.5, Qt::DashLine));
-                p.drawLine(xCoord, 0, xCoord, plotAreaBottom);
-            }
-        }
-    }
-
     for(int i=0;i<2;i++) {
         if(YAxis[i].type == YAxisType::Disabled) {
             continue;
         }
         QString labelY = AxisTypeToName(YAxis[i].type);
-        p.setPen(QPen(pref.General.graphColors.axis, 1));
+        p.setPen(QPen(pref.Graphs.Color.axis, 1));
         auto xStart = i == 0 ? 0 : w.width() - AxisLabelSize * 1.5;
         p.save();
         p.translate(xStart, w.height()-xAxisSpace);
@@ -434,14 +407,15 @@ void TraceXYPlot::draw(QPainter &p)
                 step = max / 1000;
             }
             int significantDigits = floor(log10(max)) - floor(log10(step)) + 1;
-            for(auto t : YAxis[i].ticks) {
-                auto yCoord = Util::Scale<double>(t, YAxis[i].rangeMax, YAxis[i].rangeMin, 0, w.height() - xAxisSpace);
-                p.setPen(QPen(pref.General.graphColors.axis, 1));
+
+            for(unsigned int j = 0; j < YAxis[i].ticks.size(); j++) {
+                auto yCoord = Util::Scale<double>(YAxis[i].ticks[j], YAxis[i].rangeMax, YAxis[i].rangeMin, plotAreaTop, w.height() - xAxisSpace);
+                p.setPen(QPen(pref.Graphs.Color.axis, 1));
                 // draw tickmark on axis
                 auto tickStart = i == 0 ? plotAreaLeft : plotAreaLeft + plotAreaWidth;
                 auto tickLen = i == 0 ? -2 : 2;
                 p.drawLine(tickStart, yCoord, tickStart + tickLen, yCoord);
-                auto tickValue = Unit::ToString(t, "", "fpnum kMG", significantDigits);
+                auto tickValue = Unit::ToString(YAxis[i].ticks[j], "", "fpnum kMG", significantDigits);
                 if(i == 0) {
                     p.drawText(QRectF(0, yCoord - AxisLabelSize/2 - 2, tickStart + 2 * tickLen, AxisLabelSize), Qt::AlignRight, tickValue);
                 } else {
@@ -449,13 +423,29 @@ void TraceXYPlot::draw(QPainter &p)
                 }
 
                 // tick lines
-                if(yCoord == 0 || yCoord == w.height() - xAxisSpace) {
+                if(yCoord == plotAreaTop || yCoord == w.height() - xAxisSpace) {
                     // skip tick lines right on the plot borders
                     continue;
                 }
                 if(i == 0) {
                     // only draw tick lines for primary axis
-                    p.setPen(QPen(pref.General.graphColors.divisions, 0.5, Qt::DashLine));
+                    if (pref.Graphs.Color.Ticks.Background.enabled) {
+                        int yCoordTop = Util::Scale<double>(YAxis[i].ticks[j], YAxis[i].rangeMax, YAxis[i].rangeMin, plotAreaTop, w.height() - xAxisSpace);
+                        int yCoordBot = Util::Scale<double>(YAxis[i].ticks[j-1], YAxis[i].rangeMax, YAxis[i].rangeMin, plotAreaTop, w.height() - xAxisSpace);
+                        if(yCoordTop > yCoordBot) {
+                            auto buf = yCoordBot;
+                            yCoordBot = yCoordTop;
+                            yCoordTop = buf;
+                        }
+                        if (j%2)
+                        {
+                            p.setBrush(pref.Graphs.Color.Ticks.Background.background);
+                            p.setPen(pref.Graphs.Color.Ticks.Background.background);
+                            auto rect = QRect(plotAreaLeft+1, yCoordTop+1, plotAreaWidth-2, yCoordBot-yCoordTop-2);
+                            p.drawRect(rect);
+                        }
+                    }
+                    p.setPen(QPen(pref.Graphs.Color.Ticks.divisions, 0.5, Qt::DashLine));
                     p.drawLine(plotAreaLeft, yCoord, plotAreaLeft + plotAreaWidth, yCoord);
                 }
             }
@@ -498,20 +488,7 @@ void TraceXYPlot::draw(QPainter &p)
                 // only draw markers on primary YAxis and if the trace has at least one point
                 auto markers = t->getMarkers();
                 for(auto m : markers) {
-//                    if(m->isTimeDomain() != (XAxis.type != XAxisType::Frequency)) {
-//                        // wrong domain, skip this marker
-//                        continue;
-//                    }
-                    double xPosition;
-//                    if(m->isTimeDomain()) {
-//                        if(XAxis.type == XAxisType::Distance) {
-//                            xPosition = m->getTimeData().distance;
-//                        } else {
-//                            xPosition = m->getTimeData().time;
-//                        }
-//                    } else {
-                        xPosition = m->getPosition();
-//                    }
+                    double xPosition = m->getPosition();
                     if (xPosition < XAxis.rangeMin || xPosition > XAxis.rangeMax) {
                         // marker not in graph range
                         continue;
@@ -534,6 +511,69 @@ void TraceXYPlot::draw(QPainter &p)
             }
         }
         p.setClipping(false);
+    }
+
+    if(XAxis.ticks.size() >= 1) {
+        // draw X ticks
+        // this only works for evenly distributed ticks:
+        auto max = qMax(abs(XAxis.ticks.front()), abs(XAxis.ticks.back()));
+        auto minLabel = qMin(abs(XAxis.ticks.front()), abs(XAxis.ticks.back()));
+        double step;
+        if(XAxis.ticks.size() >= 2) {
+            step = abs(XAxis.ticks[0] - XAxis.ticks[1]);
+        } else {
+            // only one tick, set arbitrary number of digits
+            step = max / 1000;
+        }
+        if(minLabel > 0 && minLabel < step) {
+            step = minLabel;
+        }
+        int significantDigits = floor(log10(max)) - floor(log10(step)) + 1;
+        bool displayFullFreq = significantDigits <= 5;
+        constexpr int displayLastDigits = 4;
+        QString prefixes = "fpnum kMG";
+        QString commonPrefix = QString();
+        if(!displayFullFreq) {
+            auto fullFreq = Unit::ToString(XAxis.ticks.front(), "", prefixes, significantDigits);
+            commonPrefix = fullFreq.at(fullFreq.size() - 1);
+            auto front = fullFreq;
+            front.truncate(fullFreq.size() - displayLastDigits);
+            auto back = fullFreq;
+            back.remove(0, front.size());
+            back.append("..");
+            p.setPen(QPen(QColor("orange")));
+            QRect bounding;
+            p.drawText(QRect(2, plotAreaBottom + AxisLabelSize + 5, w.width(), AxisLabelSize), 0, front, &bounding);
+            p.setPen(pref.Graphs.Color.axis);
+            p.drawText(QRect(bounding.x() + bounding.width(), plotAreaBottom + AxisLabelSize + 5, w.width(), AxisLabelSize), 0, back);
+        }
+
+        for(auto t : XAxis.ticks) {
+            auto xCoord = Util::Scale<double>(t, XAxis.rangeMin, XAxis.rangeMax, plotAreaLeft, plotAreaLeft + plotAreaWidth);
+            auto tickValue = Unit::ToString(t, "", prefixes, significantDigits);
+            p.setPen(QPen(pref.Graphs.Color.axis, 1));
+            if(displayFullFreq) {
+                p.drawText(QRect(xCoord - 40, plotAreaBottom + 5, 80, AxisLabelSize), Qt::AlignHCenter, tickValue);
+            } else {
+                // check if the same prefix was used as in the fullFreq string
+                if(tickValue.at(tickValue.size() - 1) != commonPrefix) {
+                    // prefix changed, we reached the next order of magnitude. Force same prefix as in fullFreq and add extra digit
+                    tickValue = Unit::ToString(t, "", commonPrefix, significantDigits + 1);
+                }
+
+                tickValue.remove(0, tickValue.size() - displayLastDigits);
+                QRect bounding;
+                p.drawText(QRect(xCoord - 40, plotAreaBottom + 5, 80, AxisLabelSize), Qt::AlignHCenter, tickValue, &bounding);
+                p.setPen(QPen(QColor("orange")));
+                p.drawText(QRect(0, plotAreaBottom + 5, bounding.x() - 1, AxisLabelSize), Qt::AlignRight, "..");
+                p.setPen(QPen(pref.Graphs.Color.axis, 1));
+            }
+            p.drawLine(xCoord, plotAreaBottom, xCoord, plotAreaBottom + 2);
+            if(xCoord != plotAreaLeft && xCoord != plotAreaLeft + plotAreaWidth) {
+                p.setPen(QPen(pref.Graphs.Color.Ticks.divisions, 0.5, Qt::DashLine));
+                p.drawLine(xCoord, plotAreaTop, xCoord, plotAreaBottom);
+            }
+        }
     }
 
     if(dropPending) {
@@ -711,9 +751,10 @@ void TraceXYPlot::updateAxisTicks()
 QString TraceXYPlot::AxisTypeToName(TraceXYPlot::XAxisType type)
 {
     switch(type) {
-    case XAxisType::Frequency: return "Frequency"; break;
-    case XAxisType::Time: return "Time"; break;
-    case XAxisType::Distance: return "Distance"; break;
+    case XAxisType::Frequency: return "Frequency";
+    case XAxisType::Time: return "Time";
+    case XAxisType::Distance: return "Distance";
+    case XAxisType::Power: return "Power";
     default: return "Unknown";
     }
 }
@@ -768,7 +809,10 @@ QString TraceXYPlot::AxisTypeToName(TraceXYPlot::YAxisType type)
     case YAxisType::Magnitude: return "Magnitude";
     case YAxisType::Phase: return "Phase";
     case YAxisType::VSWR: return "VSWR";
+    case YAxisType::Real: return "Real";
+    case YAxisType::Imaginary: return "Imaginary";
     case YAxisType::SeriesR: return "Resistance";
+    case YAxisType::Reactance: return "Reactance";
     case YAxisType::Capacitance: return "Capacitance";
     case YAxisType::Inductance: return "Inductance";
     case YAxisType::QualityFactor: return "Quality Factor";
@@ -824,6 +868,11 @@ bool TraceXYPlot::supported(Trace *t, TraceXYPlot::YAxisType type)
             return false;
         }
         break;
+    case XAxisType::Power:
+        if(t->outputType() != Trace::DataType::Power) {
+            return false;
+        }
+        break;
     default:
         break;
     }
@@ -833,6 +882,7 @@ bool TraceXYPlot::supported(Trace *t, TraceXYPlot::YAxisType type)
         return false;
     case YAxisType::VSWR:
     case YAxisType::SeriesR:
+    case YAxisType::Reactance:
     case YAxisType::Capacitance:
     case YAxisType::Inductance:
     case YAxisType::QualityFactor:
@@ -844,18 +894,6 @@ bool TraceXYPlot::supported(Trace *t, TraceXYPlot::YAxisType type)
         break;
     }
     return true;
-}
-
-void TraceXYPlot::removeUnsupportedTraces()
-{
-    for(unsigned int i=0;i<2;i++) {
-        auto set_copy = tracesAxis[i];
-        for(auto t : set_copy) {
-            if(!supported(t, YAxis[i].type)) {
-                enableTraceAxis(t, i, false);
-            }
-        }
-    }
 }
 
 QPointF TraceXYPlot::traceToCoordinate(Trace *t, unsigned int sample, TraceXYPlot::YAxisType type)
@@ -880,8 +918,17 @@ QPointF TraceXYPlot::traceToCoordinate(Trace *t, unsigned int sample, TraceXYPlo
     case YAxisType::VSWR:
         ret.setY(Util::SparamToVSWR(data.y));
         break;
+    case YAxisType::Real:
+        ret.setY(data.y.real());
+        break;
+    case YAxisType::Imaginary:
+        ret.setY(data.y.imag());
+        break;
     case YAxisType::SeriesR:
         ret.setY(Util::SparamToResistance(data.y));
+        break;
+    case YAxisType::Reactance:
+        ret.setY(Util::SparamToImpedance(data.y).imag());
         break;
     case YAxisType::Capacitance:
         ret.setY(Util::SparamToCapacitance(data.y, data.x));
@@ -899,10 +946,10 @@ QPointF TraceXYPlot::traceToCoordinate(Trace *t, unsigned int sample, TraceXYPlo
         ret.setY(Util::SparamTodB(data.y));
         break;
     case YAxisType::Step:
-        ret.setY(t->sample(sample, Trace::SampleType::TimeStep).y.real());
+        ret.setY(t->sample(sample, true).y.real());
         break;
     case YAxisType::Impedance: {
-        double step = t->sample(sample, Trace::SampleType::TimeStep).y.real();
+        double step = t->sample(sample, true).y.real();
         if(abs(step) < 1.0) {
             ret.setY(Util::SparamToImpedance(step).real());
         }
@@ -920,7 +967,7 @@ QPoint TraceXYPlot::plotValueToPixel(QPointF plotValue, int Yaxis)
 {
     QPoint p;
     p.setX(Util::Scale<double>(plotValue.x(), XAxis.rangeMin, XAxis.rangeMax, plotAreaLeft, plotAreaLeft + plotAreaWidth));
-    p.setY(Util::Scale<double>(plotValue.y(), YAxis[Yaxis].rangeMin, YAxis[Yaxis].rangeMax, plotAreaBottom, 0));
+    p.setY(Util::Scale<double>(plotValue.y(), YAxis[Yaxis].rangeMin, YAxis[Yaxis].rangeMax, plotAreaBottom, plotAreaTop));
     return p;
 }
 
@@ -928,7 +975,7 @@ QPointF TraceXYPlot::pixelToPlotValue(QPoint pixel, int Yaxis)
 {
     QPointF p;
     p.setX(Util::Scale<double>(pixel.x(), plotAreaLeft, plotAreaLeft + plotAreaWidth, XAxis.rangeMin, XAxis.rangeMax));
-    p.setY(Util::Scale<double>(pixel.y(), plotAreaBottom, 0, YAxis[Yaxis].rangeMin, YAxis[Yaxis].rangeMax));
+    p.setY(Util::Scale<double>(pixel.y(), plotAreaBottom, plotAreaTop, YAxis[Yaxis].rangeMin, YAxis[Yaxis].rangeMax));
     return p;
 }
 
@@ -981,29 +1028,18 @@ bool TraceXYPlot::xCoordinateVisible(double x)
 
 void TraceXYPlot::traceDropped(Trace *t, QPoint position)
 {
-    if(t->outputType() == Trace::DataType::Frequency && XAxis.type != XAxisType::Frequency) {
-        // needs to switch to frequency domain graph
-        if(!InformationBox::AskQuestion("X Axis Domain Change", "You dropped a frequency domain trace but the graph is still set up for the time domain."
-                                    " Do you want to remove all traces and change the graph to frequency domain?", true, "DomainChangeRequest")) {
+    if(!supported(t)) {
+        // needs to switch to a different domain for the graph
+        if(!InformationBox::AskQuestion("X Axis Domain Change", "You dropped a trace that is not supported with the currently selected X axis domain."
+                                    " Do you want to remove all traces and change the graph to the correct domain?", true, "DomainChangeRequest")) {
             // user declined to change domain, to not add trace
             return;
         }
-        setXAxis(XAxisType::Frequency, XAxisMode::FitTraces, 0, 1, 0.1);
-        setYAxis(0, YAxisType::Magnitude, false, true, 0, 1, 1.0);
-        setYAxis(1, YAxisType::Phase, false, true, 0, 1, 1.0);
-    }
-    if(t->outputType() != Trace::DataType::Frequency && XAxis.type == XAxisType::Frequency) {
-        // needs to switch to time domain graph
-        if(!InformationBox::AskQuestion("X Axis Domain Change", "You dropped a time domain trace but the graph is still set up for the frequency domain."
-                                    " Do you want to remove all traces and change the graph to time domain?", true, "DomainChangeRequest")) {
-            // user declined to change domain, to not add trace
+        if(!configureForTrace(t)) {
+            // failed to configure
             return;
         }
-        setXAxis(XAxisType::Time, XAxisMode::FitTraces, 0, 1, 0.1);
-        setYAxis(0, YAxisType::ImpulseMag, false, true, 0, 1, 1.0);
-        setYAxis(1, YAxisType::Disabled, false, true, 0, 1, 1.0);
     }
-
     if(YAxis[0].type == YAxisType::Disabled && YAxis[1].type == YAxisType::Disabled) {
         // no Y axis enabled, unable to drop
         return;
@@ -1036,7 +1072,7 @@ QString TraceXYPlot::mouseText(QPoint pos)
         QPointF coords[2];
         coords[0] = pixelToPlotValue(pos, 0);
         coords[1] = pixelToPlotValue(pos, 1);
-        int significantDigits = floor(log10(XAxis.rangeMax)) - floor(log10((XAxis.rangeMax - XAxis.rangeMin) / 1000.0)) + 1;
+        int significantDigits = floor(log10(abs(XAxis.rangeMax))) - floor(log10((abs(XAxis.rangeMax - XAxis.rangeMin)) / 1000.0)) + 1;
         ret += Unit::ToString(coords[0].x(), AxisUnit(XAxis.type), "fpnum kMG", significantDigits) + "\n";
         for(int i=0;i<2;i++) {
             if(YAxis[i].type != YAxisType::Disabled) {
@@ -1053,23 +1089,24 @@ QString TraceXYPlot::mouseText(QPoint pos)
 QString TraceXYPlot::AxisUnit(TraceXYPlot::YAxisType type)
 {
     switch(type) {
-    case TraceXYPlot::YAxisType::Magnitude: return "db"; break;
-    case TraceXYPlot::YAxisType::Phase: return "°"; break;
-    case TraceXYPlot::YAxisType::VSWR: return ""; break;
-    case TraceXYPlot::YAxisType::ImpulseReal: return ""; break;
-    case TraceXYPlot::YAxisType::ImpulseMag: return "db"; break;
-    case TraceXYPlot::YAxisType::Step: return ""; break;
-    case TraceXYPlot::YAxisType::Impedance: return "Ohm"; break;
-    default: return ""; break;
+    case TraceXYPlot::YAxisType::Magnitude: return "db";
+    case TraceXYPlot::YAxisType::Phase: return "°";
+    case TraceXYPlot::YAxisType::VSWR: return "";
+    case TraceXYPlot::YAxisType::ImpulseReal: return "";
+    case TraceXYPlot::YAxisType::ImpulseMag: return "db";
+    case TraceXYPlot::YAxisType::Step: return "";
+    case TraceXYPlot::YAxisType::Impedance: return "Ohm";
+    default: return "";
     }
 }
 
 QString TraceXYPlot::AxisUnit(TraceXYPlot::XAxisType type)
 {
     switch(type) {
-    case XAxisType::Frequency: return "Hz"; break;
-    case XAxisType::Time: return "s"; break;
-    case XAxisType::Distance: return "m"; break;
-    default: return ""; break;
+    case XAxisType::Frequency: return "Hz";
+    case XAxisType::Time: return "s";
+    case XAxisType::Distance: return "m";
+    case XAxisType::Power: return "dBm";
+    default: return "";
     }
 }

@@ -2,6 +2,7 @@
 #define TRACEXYPLOT_H
 
 #include "traceplot.h"
+
 #include <set>
 
 class TraceXYPlot : public TracePlot
@@ -17,8 +18,11 @@ public:
         Magnitude,
         Phase,
         VSWR,
+        Real,
+        Imaginary,
         // derived parameter options
         SeriesR,
+        Reactance,
         Capacitance,
         Inductance,
         QualityFactor,
@@ -34,6 +38,7 @@ public:
         Frequency,
         Time,
         Distance,
+        Power,
         Last,
     };
     enum class XAxisMode {
@@ -59,6 +64,7 @@ public slots:
     void axisSetupDialog();
 
 protected:
+    virtual bool configureForTrace(Trace *t) override;
     virtual void updateContextMenu() override;
     virtual bool dropSupported(Trace *t) override;
     virtual void draw(QPainter &p) override;
@@ -76,7 +82,6 @@ private:
     void enableTraceAxis(Trace *t, int axis, bool enabled);
     bool supported(Trace *t) override;
     bool supported(Trace *t, YAxisType type);
-    void removeUnsupportedTraces();
     QPointF traceToCoordinate(Trace *t, unsigned int sample, YAxisType type);
     QPoint plotValueToPixel(QPointF plotValue, int Yaxis);
     QPointF pixelToPlotValue(QPoint pixel, int YAxis);
@@ -115,7 +120,7 @@ private:
     YAxis YAxis[2];
     XAxis XAxis;
 
-    int plotAreaLeft, plotAreaWidth, plotAreaBottom;
+    int plotAreaLeft, plotAreaWidth, plotAreaBottom, plotAreaTop;
 };
 
 #endif // TRACEXYPLOT_H

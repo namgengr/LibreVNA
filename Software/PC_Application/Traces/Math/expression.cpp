@@ -1,10 +1,11 @@
 #include "expression.h"
-#include <QWidget>
+
 #include "ui_expressiondialog.h"
-#include <QWidget>
-#include <QDebug>
 #include "Traces/trace.h"
 #include "ui_expressionexplanationwidget.h"
+
+#include <QWidget>
+#include <QDebug>
 
 using namespace mup;
 using namespace std;
@@ -41,10 +42,13 @@ void Math::Expression::edit()
         exp = ui->expEdit->text();
         expressionChanged();
     });
-    if(dataType == DataType::Time) {
-        // select the label explaining the time domain variables (frequency label is the default)
-        ui->stackedWidget->setCurrentIndex(1);
+    switch(dataType) {
+    case DataType::Frequency: ui->stackedWidget->setCurrentIndex(0); break;
+    case DataType::Time: ui->stackedWidget->setCurrentIndex(1); break;
+    case DataType::Power: ui->stackedWidget->setCurrentIndex(2); break;
+    default: break;
     }
+
     d->show();
 }
 
@@ -77,6 +81,7 @@ void Math::Expression::inputSamplesChanged(unsigned int begin, unsigned int end)
         for(unsigned int i=begin;i<end;i++) {
             t = in[i].x;
             f = in[i].x;
+            P = in[i].x;
             w = in[i].x * 2 * M_PI;
             d = root()->timeToDistance(t);
             x = in[i].y;
@@ -102,6 +107,7 @@ void Math::Expression::expressionChanged()
     parser->RemoveVar("d");
     parser->RemoveVar("f");
     parser->RemoveVar("w");
+    parser->RemoveVar("P");
     switch(dataType) {
     case DataType::Time:
         parser->DefineVar("t", Variable(&t));
@@ -110,6 +116,9 @@ void Math::Expression::expressionChanged()
     case DataType::Frequency:
         parser->DefineVar("f", Variable(&f));
         parser->DefineVar("w", Variable(&w));
+        break;
+    case DataType::Power:
+        parser->DefineVar("P", Variable(&P));
         break;
     default:
         break;

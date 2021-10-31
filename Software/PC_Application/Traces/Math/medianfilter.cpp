@@ -1,8 +1,8 @@
 #include "medianfilter.h"
+
 #include "ui_medianfilterdialog.h"
 #include "ui_medianexplanationwidget.h"
-
-#include <QMessageBox>
+#include "CustomWidgets/informationbox.h"
 
 using namespace Math;
 using namespace std;
@@ -34,7 +34,7 @@ void MedianFilter::edit()
 
     connect(ui->kernelSize, qOverload<int>(&QSpinBox::valueChanged), [=](int newval) {
         if((newval & 0x01) == 0) {
-            QMessageBox::information(d, "Median filter", "Only odd values are allowed for the kernel size");
+            InformationBox::ShowMessageBlocking("Median filter", "Only odd values are allowed for the kernel size");
             newval++;
         }
         ui->kernelSize->setValue(newval);

@@ -2,15 +2,15 @@
 #define CALIBRATION_H
 
 #include "Device/device.h"
+#include "calkit.h"
+#include "Traces/tracemodel.h"
+
 #include <complex>
 #include <vector>
 #include <map>
 #include <iostream>
 #include <iomanip>
-#include "calkit.h"
-#include "Traces/tracemodel.h"
 #include <QDateTime>
-#include "calkit.h"
 
 class Calibration
 {
@@ -29,9 +29,23 @@ public:
         Line,
         Last,
     };
+
+    enum class Standard {
+        Open,
+        Short,
+        Load,
+        Through,
+        Any,
+    };
+
+    static Standard getPort1Standard(Measurement m);
+    static Standard getPort2Standard(Measurement m);
+
     void clearMeasurements();
+    void clearMeasurements(std::set<Measurement> types);
     void clearMeasurement(Measurement type);
     void addMeasurement(Measurement type, Protocol::Datapoint &d);
+    void addMeasurements(std::set<Measurement> types, Protocol::Datapoint &d);
 
     enum class Type {
         Port1SOL,
@@ -59,7 +73,7 @@ public:
         NoCalibration, // No calibration available
     };
 
-    InterpolationType getInterpolation(Protocol::SweepSettings settings);
+    InterpolationType getInterpolation(double f_start, double f_stop, int points);
 
     static Measurement MeasurementFromString(QString s);
     static QString MeasurementToString(Measurement m);

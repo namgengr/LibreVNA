@@ -1,12 +1,13 @@
 #ifndef PORTEXTENSION_H
 #define PORTEXTENSION_H
 
-#include <QObject>
 #include "../VNA_embedded/Application/Communication/Protocol.hpp"
-#include <QToolBar>
 #include "Calibration/calkit.h"
-#include <QMessageBox>
 #include "deembeddingoption.h"
+
+#include <QObject>
+#include <QMessageBox>
+#include <QToolBar>
 
 namespace Ui {
 class PortExtensionEditDialog;
@@ -41,12 +42,10 @@ private:
 
     // status variables for automatic measurements
     Calkit *kit;
-//    bool measuring;
     bool isPort1;
     bool isOpen;
     bool isIdeal;
-//    std::vector<Protocol::Datapoint> measurements;
-    QMessageBox *msgBox;
+
     Ui::PortExtensionEditDialog *ui;
 };
 

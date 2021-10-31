@@ -1,4 +1,5 @@
 #include "generator.h"
+
 #include <QSettings>
 
 Generator::Generator(AppWindow *window)
@@ -38,6 +39,19 @@ void Generator::deactivate()
 void Generator::initializeDevice()
 {
     updateDevice();
+}
+
+nlohmann::json Generator::toJSON()
+{
+    return central->toJSON();
+}
+
+void Generator::fromJSON(nlohmann::json j)
+{
+    if(j.is_null()) {
+        return;
+    }
+    central->fromJSON(j);
 }
 
 void Generator::updateDevice()
