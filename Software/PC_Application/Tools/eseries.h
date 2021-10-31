@@ -1,6 +1,8 @@
 #ifndef ESERIES_H
 #define ESERIES_H
 
+#include <vector>
+
 
 class ESeries
 {
@@ -20,6 +22,8 @@ public:
     };
 
     static double ToESeries(double value, Series s, Type t = Type::BestMatch);
+
+    std::vector<double> _eSeries(int root);
 };
 
 #endif // ESERIES_H
