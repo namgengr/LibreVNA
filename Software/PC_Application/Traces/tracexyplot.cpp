@@ -705,6 +705,9 @@ void TraceXYPlot::updateAxisTicks()
             double max = std::numeric_limits<double>::lowest();
             double min = std::numeric_limits<double>::max();
             for(auto t : tracesAxis[i]) {
+                if(!t->isVisible()) {
+                    continue;
+                }
                 unsigned int samples = t->size();
                 for(unsigned int j=0;j<samples;j++) {
                     auto point = traceToCoordinate(t, j, YAxis[i].type);
@@ -740,10 +743,14 @@ void TraceXYPlot::updateAxisTicks()
                     min -= range * 0.05;
                     max += range * 0.05;
                 }
-                YAxis[i].rangeMin = min;
-                YAxis[i].rangeMax = max;
-                YAxis[i].rangeDiv = createAutomaticTicks(YAxis[i].ticks, min, max, 8);
+            } else {
+                // max/min still at default values, no valid samples are available for this axis, use default range
+                max = 1.0;
+                min = -1.0;
             }
+            YAxis[i].rangeMin = min;
+            YAxis[i].rangeMax = max;
+            YAxis[i].rangeDiv = createAutomaticTicks(YAxis[i].ticks, min, max, 8);
         }
     }
 }
